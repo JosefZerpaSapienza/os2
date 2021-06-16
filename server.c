@@ -17,12 +17,19 @@
 #define handle_err(msg) \
   do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
-void clean (int signo);
+// Clean up before exiting.
+void quit (int signo);
+// Receiver thread.
 static void *receiver (void *arg);
 
-//List of open file descriptors (active connections).
+// Switch that keeps the server listening for new connections.
+static int QUIT = 0;
+// List of active connections.
 static struct ConnList *connections;
 
+// Chatroom server. 
+// Listen for connections and manage thread creation
+// for every new client.
 int main (int argc, char **argv) {
   int port = 0, connection_limit = 10;
   int listenfd, connfd;
@@ -81,52 +88,57 @@ int main (int argc, char **argv) {
   // TODO: writer thread.
 
   // Clean when SIGINT is caught.
-  action.sa_handler = &clean;
+  action.sa_handler = &quit;
   action.sa_flags = SA_RESETHAND; //reset to default after use
   sigaction(SIGINT, &action, NULL);
   
   // Listen for connections.
   printf("\nPress CTRL-C to exit.\n");
-  printf("Listening for incoming connections . . .\n");
+  printf("Listening for incoming connections.\n");
   printf("-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n\n");
-  while(1) {
+  QUIT = 0;
+  while(!QUIT) {
     client_addr_size = sizeof(struct sockaddr_in);
     connfd = accept(listenfd, (struct sockaddr*) &client_addr, &client_addr_size);
     if (connfd == -1) {
-      if (errno == EINTR) { // SIGINT was received
-	printf("Exiting . . .\n");
-	break;
+      if (errno != EINTR) { // or other error
+        handle_err("Error on accepting connection."); 
       }
-      handle_err("Error on accepting connection.");  
     } else {
       // Connection received.
       // Create and append connection to connection list.
-      connection = createConn(connfd, NULL, NULL);
-      if (!connection) { handle_err("Error creating new connection node!"); }
+      if (! (connection = createConn(connfd, NULL, NULL))) {
+        quit(0);
+	handle_err("Error creating new connection node!"); 
+      }
       appendConn(connection, connections);
       // Print new connection.
       inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
       printf("%s connected.\n", client_ip);
       // Create thread and pass connection.
       if (pthread_create(&thread_id, NULL, &receiver, connection) != 0) {
-        clean(0);
+        quit(0);
         handle_err("Error on creating thread.");
       }
     }
   }
+  
+  printf("\nDone.\n");
 
 
   return 0;
 }
 
-// Clean the environment.
-// Close open connections and free memory.
-void clean(int signo) {
+// Change QUIT value, to quit the main running loop.
+void quit(int signo) {
   struct Node *node, *temp;
 
-  printf("\nClosing connections.\n");
+  QUIT = 1;
+
+  printf("\n-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n\n");
   // Close open connections and 
   // free dynamically allocated memory.
+  printf("Closing connections:\n");
   node = connections->head;
   while(node) {
     printf("Close %d.\n", node->value);
@@ -137,10 +149,7 @@ void clean(int signo) {
     node = node->next;
     free(temp);
   }
-  if (connections) {
-    free(connections);
-  }
-
+  free(connections);
 }
 
 // Receiver thread.
@@ -156,6 +165,7 @@ static void *receiver(void *arg) {
   struct timeval timeout;
   fd_set readfds;
   
+  // Send welcome message.
   sprintf(buff, welcome_msg, connfd);
   write(connfd, buff, strlen(buff));
 
@@ -165,7 +175,7 @@ static void *receiver(void *arg) {
   FD_ZERO(&readfds);
   FD_SET(connfd, &readfds);
   while(select(connfd + 1, &readfds, NULL, NULL, &timeout) > 0) {
-    // TODO: Read message and send to writer thread.
+    // TODO: Read message and forward to writer thread.
     n = read(connfd, buff, BUFF_SIZE - 1);
     if (n <= 0) { break; }
     buff[n - 1] = '\0';
