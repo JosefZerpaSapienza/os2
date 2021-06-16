@@ -1,4 +1,5 @@
 // client.c
+//
 // Client code of a chatroom.
 // author: Josef E. Zerpa R.
 
@@ -14,14 +15,14 @@
 #include <arpa/inet.h>
 
 #define BUFF_SIZE 256
-#define TIMEOUT 5
+#define TIMEOUT 1
 #define handle_err(msg) \
   do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
 int QUIT;
 
 void quit (int signo) {
-  if (!QUIT) { return; } // quit() already run
+  if (QUIT) { return; } // quit() already run
 
   QUIT = 1;
 }
@@ -73,19 +74,18 @@ int main (int argc, char **argv) {
   printf("Type messages and click enter to send.\n");
   printf("-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n\n");
   
-  //timeout.tv_sec = TIMEOUT;
-  //timeout.tv_usec = 0;
-  //FD_ZERO(&writefds);
-  //FD_SET(connfd, &writefds);
-  while(QUIT) {
+  // Set pipe checker
+  timeout.tv_sec = TIMEOUT;
+  timeout.tv_usec = 0;
+  FD_ZERO(&writefds);
+  FD_SET(connfd, &writefds);
+  QUIT = 0;
+  while(!QUIT) {
     // Read input and send messages
     // TODO:
     fgets(buff, BUFF_SIZE, stdin);
     //Check if pipe was closed.
-    //int p;
-    //if( (p = select(connfd + 1, NULL, &writefds, NULL, &timeout)) <= 0 ) {
-    //  break;
-    //}
+    if ( (select(connfd + 1, NULL, &writefds, NULL, &timeout)) <= 0 ) { quit(0); }
     write(connfd, buff, strlen(buff));
   }
 

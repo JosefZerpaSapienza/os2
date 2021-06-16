@@ -1,0 +1,3 @@
+- Fix select:
+  when pipe is closed the programs terminate because of SIGPIPE. Select() is not checking
+  correctly whether the pipe is open or closed.

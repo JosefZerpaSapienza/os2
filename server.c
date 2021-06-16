@@ -1,4 +1,5 @@
 // server.c
+//
 // Server of a chat room.
 // author: Josef E. Zerpa R.
 
