@@ -1,3 +1,7 @@
+// client.c
+// Client code of a chatroom.
+// author: Josef E. Zerpa R.
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -14,10 +18,12 @@
 #define handle_err(msg) \
   do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
-int QUIT = 1;
+int QUIT;
 
 void quit (int signo) {
-  QUIT = 0;
+  if (!QUIT) { return; } // quit() already run
+
+  QUIT = 1;
 }
 
 int main (int argc, char **argv) {
@@ -83,6 +89,7 @@ int main (int argc, char **argv) {
     write(connfd, buff, strlen(buff));
   }
 
+  printf("\n-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n\n");
   printf("Connection with %s closed.\n", argv[1]);
   close(connfd);
 
