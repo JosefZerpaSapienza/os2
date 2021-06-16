@@ -101,6 +101,7 @@ int main (int argc, char **argv) {
     client_addr_size = sizeof(struct sockaddr_in);
     connfd = accept(listenfd, (struct sockaddr*) &client_addr, &client_addr_size);
     if (connfd == -1) {
+      quit(0); // SIGINT was received
       if (errno != EINTR) { // or other error
         handle_err("Error on accepting connection."); 
       }
@@ -133,6 +134,8 @@ int main (int argc, char **argv) {
 void quit(int signo) {
   struct Node *node, *temp;
 
+  if (QUIT) { return; } // quit() already run
+  
   QUIT = 1;
 
   printf("\n-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n\n");

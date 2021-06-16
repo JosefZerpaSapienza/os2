@@ -66,6 +66,7 @@ void  *appendConn(struct Node *node, struct ConnList *list) {
 // Remove the node at the address given, from the ConnList.
 // @WARNING! IT'S NOT CHECKED wether the given node actually
 // belongs to the given list.
+// next and previous can be NULL.
 void removeConn(struct Node *node, struct ConnList *list) {
   struct Node *previous = node->previous;
   struct Node *next = node->next;
