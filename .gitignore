@@ -1,3 +1,4 @@
 server
 client
-
+server_global.log
+client_global.log
