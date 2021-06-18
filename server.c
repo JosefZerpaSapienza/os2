@@ -28,6 +28,8 @@
 
 // Clean up before exiting.
 void clean (int);
+// Add message to shared message stack.
+void write_to_message_stack (char *, int);
 // Receiver thread.
 static void *receiver (void *);
 // Writer thread.
@@ -181,8 +183,6 @@ void clean(int signo) {
   node = connections->head;
   while(node) {
     printf("Close %d.\n", node->value);
-    // TODO: when connection is closed exit client program.
-    // shutdown(node->value, SHUT_RD);
     close(node->value);
     temp = node;
     node = node->next;
@@ -202,32 +202,26 @@ static void *receiver(void *arg) {
   int n, welcome;
 
   char buff[BUFF_SIZE];
-  const char welcome_msg[] = "Welcome in the chatroom. You are fd #%d.\n";
+  const char welcome_msg[] = "Welcome in the chatroom. You are id #%d.\n\n";
+  const char entered_notification[] = "#%d Entered the chat.";
+  const char left_notification[] = "#%d Left the chat.";
   
   // Send welcome message.
   sprintf(buff, welcome_msg, connfd);
   n = write(connfd, buff, strlen(buff));
   welcome = (n == -1 && errno == EPIPE) ? 0 : 1; // welcome = if welcome msg was received
+  // Notify new connection to the chatroom.
+  if (welcome) {
+    sprintf(buff, entered_notification, connfd);
+    write_to_message_stack(buff, strlen(buff));
+  }
 
   while(welcome && !quit) {
     n = read(connfd, buff, BUFF_SIZE - 1);
     if (!n) { break; } // Check if pipe was closed!
 
-    if (pthread_mutex_lock(&stack_mutex) != 0) { // Mutex write
-      handle_err("Error locking message stack mutex.\n");
-    }
-    while(!stack_availability) { // loop for signals interrupting the wait
-      pthread_cond_wait(&stack_cond, &stack_mutex);
-    }
-    snprintf(msg_stack[write_index++], n, buff); // Write in shared stack.
-    if (write_index == MSG_STACK_SIZE) { write_index = 0; }// Reset to use stack round-robin
-    new_msg++;
-    stack_availability--;
-    pthread_cond_signal(&new_msg_cond);
-    if ( (pthread_mutex_unlock(&stack_mutex)) != 0) {  
-      handle_err("Error unlocking message stack mutex.");
-    }
-  }
+    write_to_message_stack(buff, n);
+ }
 
   // When client disconnects remove fd from list
   // and return.
@@ -239,6 +233,10 @@ static void *receiver(void *arg) {
   if ( (pthread_mutex_unlock(&connections_mutex)) != 0) {
     handle_err("Error unlocking mutex.");
   }
+
+  // Notify connection termination to the chatroom.
+  sprintf(buff, left_notification, connfd);
+  write_to_message_stack(buff, strlen(buff));
 }
 
 // Writer thread.
@@ -269,7 +267,7 @@ static void *writer (void *arg) {
       handle_err("Error unlocking message stack mutex.");
     }
 
-    // Format message. TODO: Add timestamp.
+    // Format message.
     len = strlen(buff);
     buff[len] = '\n';
     buff[len + 1] = '\0';
@@ -298,3 +296,23 @@ static void *writer (void *arg) {
   close(global_log_fd);
 }
 
+// Add a message to the shared message stack.
+void write_to_message_stack(char *message, int len) {
+    if (pthread_mutex_lock(&stack_mutex) != 0) { // Mutex write
+      handle_err("Error locking message stack mutex.\n");
+    }
+    while(!stack_availability) { // loop for signals interrupting the wait
+      pthread_cond_wait(&stack_cond, &stack_mutex);
+    }
+    snprintf(msg_stack[write_index++], len, message); // Write in shared stack.
+    if (write_index == MSG_STACK_SIZE) { write_index = 0; }// Reset to use stack round-robin
+    new_msg++;
+    stack_availability--;
+    pthread_cond_signal(&new_msg_cond);
+    if ( (pthread_mutex_unlock(&stack_mutex)) != 0) {  
+      handle_err("Error unlocking message stack mutex.");
+    }
+}
+
+// TODO: set up timer thread: Send date notifications to the chatroom.
+//       when midnight strikes, send the date of the new day. For logs.

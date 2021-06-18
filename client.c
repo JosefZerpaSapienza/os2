@@ -14,16 +14,24 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <time.h>
+#include <ctype.h>
+#include <pthread.h>
 
 #define BUFF_SIZE 256
+#define ID_SIZE 6
 #define TIMEOUT 1
 #define GLOBAL_LOG_FILENAME "client_global.log"
+#define PERSONAL_LOG_FILENAME "client_personal.log"
 #define handle_err(msg) \
   do { perror(msg); exit(EXIT_FAILURE); } while (0)
 
-int quit = 0;
+static int quit = 0;
+static int id = 0;
 
 static void *receiver (void *);
+
+int format_message (char *, char *);
 
 void clean (int signo) {
   if (quit) { return; } // clean() already run
@@ -32,12 +40,10 @@ void clean (int signo) {
 }
 
 int main (int argc, char **argv) {
-  int connfd, portno, n;
+  int connfd, portno, global_log_fd, len;
   struct sockaddr_in serv_addr;
-  char buff[BUFF_SIZE];
+  char buff[BUFF_SIZE], send_buff[BUFF_SIZE];
   struct sigaction action, ign_action;
-  mode_t mode;
-  int global_log_fd;
   pthread_t thread_id;
 
   // Check options.
@@ -70,6 +76,7 @@ int main (int argc, char **argv) {
   
   // Sender thread.
   // Exit when SIGINT is caught.
+  // Ignore SIGPIPE.
   action.sa_handler = &clean;
   action.sa_flags = SA_RESETHAND; // reset to default after use
   sigaction(SIGINT, &action, NULL);
@@ -81,10 +88,11 @@ int main (int argc, char **argv) {
   printf("Type messages and click enter to send.\n");
   printf("-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n\n");
   
+  // Read input and send messages. Also check pipe.
   while(!quit) {
-    // Read input and send messages. Also check pipe.
-    fgets(buff, BUFF_SIZE, stdin);
-    if ( (write(connfd, buff, strlen(buff))) == -1 && errno == EPIPE) { break; }
+    if (! (fgets(buff, BUFF_SIZE, stdin))) { break; }
+    len = format_message(buff, send_buff);
+    if ( (write(connfd, send_buff, len)) == -1 && errno == EPIPE) { break; }
   }
 
   printf("\n-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --\n\n");
@@ -94,32 +102,73 @@ int main (int argc, char **argv) {
   return 0;
 }
 
+// Format user input into chatroom message.
+// Eg. add timestamp, user id, etc.
+int format_message(char *message, char *formatted) {
+  time_t seconds;
+  struct tm bd_tm;
+  char *format = "[#%d|%d:%d] %s"; // [#id|hour:minute] messaggio
+ 
+  seconds = time(NULL);
+  localtime_r(&seconds, &bd_tm);
+
+  snprintf(formatted, BUFF_SIZE, "[#%d|%d:%d] %s", id, bd_tm.tm_hour, bd_tm.tm_min, message);
+
+  return strlen(formatted);
+}
 
 // Receiver/Writer thread.
 // Receive messages and write them to disk.
 static void *receiver (void *arg) {
   char buff[BUFF_SIZE];
   int connfd = *((int *) arg);
-  int n;
+  int n, i, received_id;
+  char identifier[ID_SIZE], *p;
 
-  // Open global log file.
+  // Open log files.
   mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
   int global_log_fd = open(GLOBAL_LOG_FILENAME, O_RDWR | O_CREAT | O_APPEND, mode);  
+  int personal_log_fd = open(PERSONAL_LOG_FILENAME, O_RDWR | O_CREAT | O_APPEND, mode);  
+
 
   while(1) {
     n = read(connfd, buff, BUFF_SIZE - 1);
     if (!n) { break; } // Check if pipe was closed!
-
     buff[n] = '\0';
-    // Print on screen.
-    printf("%s", buff);
 
-    // Write on disk.
+    // Write on global log.
     if ( (write(global_log_fd, buff, n)) <= 0) {
       handle_err("Error writing on global log.");
     }
-  }
+
+    // Message parsing. 
+    // Get id. Do print messages sent by me.
+    for(p = buff; *p != '#'; p++) { 
+      ; 
+    }
+    p++;
+    for (i = 0; isdigit(p[i]); i++) {
+      identifier[i] = p[i];
+    }
+    identifier[i] = '\0';
+    received_id = atoi(identifier);
+    if (!id) {
+      id = received_id;
+      printf("%s", buff); // Print welcome message
+    }
+
+    // Print on screen.
+    if (received_id != id) { // Weclcome message is not printed here
+      printf("%s", buff);
+    } else { // Write on personal log.
+      if ( (write(personal_log_fd, buff, n)) <= 0) {
+        handle_err("Error writing on global log.");
+      }
+    }
+
+ }
 
   close(global_log_fd);
+  close(personal_log_fd);
 }
 
