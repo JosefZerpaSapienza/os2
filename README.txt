@@ -26,3 +26,10 @@ Funzionalità implementate:
 - Notifica da parte del server di nuove connessioni e disconnessioni.
 - Metadata nei messaggi, con l'id del mittente del messaggio e l'ora di invio. (TODO: ogni giorno a mezzanotte il server invierebbe una notifica della data, per poter vedere quando sono stati inviati i messaggi, e non solo a che ora. Stile Whatsapp.)
 - 
+
+
+
+Test effettuati:
+- Demo di usabilità.
+- Test di overflow con messaggi lunghi.
+- 
